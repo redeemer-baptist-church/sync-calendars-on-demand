@@ -1,0 +1,33 @@
+{
+  "name": "redeemer-mailchimp",
+  "version": "1.0.0",
+  "description": "Sync Mailchimp lists to Google Apps groups",
+  "main": "app.js",
+  "dependencies": {
+    "@google-cloud/firestore": "^0.21.0",
+    "array.prototype.flat": "^1.2.1",
+    "mailchimp-api-v3": "^1.12.1",
+    "ow": "^0.12.0"
+  },
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "dotenv": "^6.2.0",
+    "eslint": "^5.13.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-plugin-import": "^2.16.0",
+    "eslint-plugin-jest": "^22.2.2",
+    "jest": "^24.0.0",
+    "sinon": "^7.2.3"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "test": "jest --watch",
+    "lint": "eslint ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/redeemer-baptist-church/mailchimp.git"
+  },
+  "author": "Tyler Distad",
+  "license": "MIT"
+}
