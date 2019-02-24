@@ -14,6 +14,12 @@ module.exports = {
   "rules": {
      "jest/consistent-test-it": ["error"],
      "jest/expect-expect": ["error"],
+    "max-len": ["warn",
+      {
+         "code": 120,
+         "ignoreComments": true,
+      }
+    ],
      "no-console": "off",
       "semi": [
           "error",
