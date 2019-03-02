@@ -28,15 +28,18 @@ const {
 //
 // With the completed calendars, scrape them for a given Sunday and generate a newsletter template
 
-async function getMailchimpTagGroups() {
+async function getMailchimpGroupedUsers() {
   const apiKey = await new Secret('MailchimpApiKey').get()
 
   const mailchimp = new Mailchimp(apiKey)
   return mailchimp.members.reduce((tagGroups, member) => {
     member.tags.forEach((tag) => {
-      const tagName = tag.name
+      const tagName = pluralize.plural(tag.name)
       const group = tagGroups[tagName] || []
-      group.push(member.email)
+      group.push({
+        email: member.email,
+        name: member.name,
+      })
       tagGroups[tagName] = group // eslint-disable-line no-param-reassign
     })
     return tagGroups
@@ -54,13 +57,8 @@ async function buildGsuiteConnection() {
   return client.buildConnection('directory_v1')
 }
 
-async function syncGroups() {
-  const mailchimpGroups = await getMailchimpTagGroups()
-    .then(groups => Object.keys(groups).map(group => pluralize.plural(group)))
-  console.info('Mailchimp reports these groups:', mailchimpGroups)
-
-  const connection = await buildGsuiteConnection()
-  const manager = new GSuiteGroupManager({connection, domain: 'redeemerbc.com'})
+async function syncGroups(manager, mailchimpGroups) {
+  console.info('Synching these Mailchimp groups to GSuite:', mailchimpGroups)
 
   const gsuiteGroups = await manager.getGroups().then(groups => groups.map(group => group.name))
   console.info('GSuite reports these groups:', gsuiteGroups)
@@ -74,7 +72,23 @@ async function syncGroups() {
   await manager.deleteGroups(groupsToDelete)
 }
 
+async function syncUsersIntoGroups(manager, mailchimpGroupedUsers) {
+  // TODO: check for members that aleady exist, as with groups
+  // TODO: remove departed members, as with groups
+  Object.entries(mailchimpGroupedUsers).forEach(([group, users]) => {
+    users.forEach(user => manager.insertUser(user.email, group))
+  })
+}
+
 async function run() {
-  await syncGroups()
+  const connection = await buildGsuiteConnection()
+  const manager = new GSuiteGroupManager({connection, domain: 'redeemerbc.com'})
+
+  const mailchimpGroupedUsers = await getMailchimpGroupedUsers()
+  console.log(mailchimpGroupedUsers)
+  const mailchimpGroups = Object.keys(mailchimpGroupedUsers)
+  console.info('Mailchimp reports these groups:', mailchimpGroups)
+  await syncGroups(manager, mailchimpGroups)
+  await syncUsersIntoGroups(manager, mailchimpGroupedUsers)
 }
 run().catch(e => console.log(e))
