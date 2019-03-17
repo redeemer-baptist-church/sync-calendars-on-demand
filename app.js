@@ -60,7 +60,7 @@ async function buildGsuiteConnection() {
 async function syncGroups(manager, mailchimpGroups) {
   console.info('Synching these Mailchimp groups to GSuite:', mailchimpGroups)
 
-  const gsuiteGroups = await manager.getGroups().then(groups => groups.map(group => group.name))
+  const gsuiteGroups = await manager.getGroups().then(groups => groups.map(group => group.name.toLowerCase()))
   console.info('GSuite reports these groups:', gsuiteGroups)
 
   const groupsToCreate = mailchimpGroups.filter(g => !gsuiteGroups.includes(g))
@@ -73,10 +73,20 @@ async function syncGroups(manager, mailchimpGroups) {
 }
 
 async function syncUsersIntoGroups(manager, mailchimpGroupedUsers) {
-  // TODO: check for members that aleady exist, as with groups
-  // TODO: remove departed members, as with groups
-  Object.entries(mailchimpGroupedUsers).forEach(([group, users]) => {
-    users.forEach(user => manager.insertUser(user.email, group))
+  Object.entries(mailchimpGroupedUsers).forEach(async ([group, groupedUsers]) => {
+    const mailchimpUsers = groupedUsers.map(user => user.email.toLowerCase())
+    console.info(`Synching these Mailchimp users to GSuite group '${group}':`, mailchimpUsers)
+
+    const gsuiteUsers = await manager.getUsers(group).then(users => users.map(user => user.email.toLowerCase()))
+    console.info('GSuite reports these users:', gsuiteUsers)
+
+    const usersToCreate = mailchimpUsers.filter(u => !gsuiteUsers.includes(u))
+    console.info(`These users exist in Mailchimp but not in GSuite group ${group}:`, usersToCreate)
+    await manager.insertUsers(usersToCreate, group)
+
+    const usersToDelete = gsuiteUsers.filter(u => !mailchimpUsers.includes(u))
+    console.info(`These users exist in GSuite but not in Mailchimp group ${group}:`, usersToDelete)
+    await manager.deleteUsers(usersToDelete, group)
   })
 }
 
@@ -86,7 +96,7 @@ async function run() {
 
   const mailchimpGroupedUsers = await getMailchimpGroupedUsers()
   console.log(mailchimpGroupedUsers)
-  const mailchimpGroups = Object.keys(mailchimpGroupedUsers)
+  const mailchimpGroups = Object.keys(mailchimpGroupedUsers).map(group => group.toLowerCase())
   console.info('Mailchimp reports these groups:', mailchimpGroups)
   await syncGroups(manager, mailchimpGroups)
   await syncUsersIntoGroups(manager, mailchimpGroupedUsers)
