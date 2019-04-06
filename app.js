@@ -2,12 +2,12 @@
 require('dotenv').config() // load gcloud credentials in dev
 
 const pluralize = require('pluralize')
-const {Secret} = require('@redeemerbc/secret')
-const {Mailchimp} = require('./lib/mailchimp')
 const {
   Client: GSuiteClient,
   GroupManager: GSuiteGroupManager,
-} = require('./lib/@gsuite')
+} = require('@redeemerbc/gsuite')
+const {Secret} = require('@redeemerbc/secret')
+const {Mailchimp} = require('./lib/mailchimp')
 
 // TODO:
 // * For each calendar, create a separate GCP Function that knows how to populate it

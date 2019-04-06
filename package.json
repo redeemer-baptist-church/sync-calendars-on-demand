@@ -6,6 +6,7 @@
   "dependencies": {
     "@google-cloud/firestore": "^0.21.0",
     "@redeemerbc/secret": "git+https://github.com/redeemer-baptist-church/npm-secret.git",
+    "@redeemerbc/gsuite": "git+https://github.com/redeemer-baptist-church/gsuite.git",
     "array.prototype.flat": "^1.2.1",
     "dotenv": "^6.2.0",
     "googleapis": "^37.2.0",
