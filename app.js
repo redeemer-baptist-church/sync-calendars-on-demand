@@ -10,16 +10,6 @@ const {
 } = require('./lib/@gsuite')
 
 // TODO:
-// * Write code to create a group for every Mailchimp tag
-//   * Check to see if the group exists - DONE
-//   * If not, create it - DONE
-//   * Group will need to allow non-domain member
-//   * Group should not accept emails from non-group-members
-// * For every Mailchimp user with that tag,
-//   * Add them to the group
-//     * Identify them by both name and email address
-//   * Remove any current group users who do not have the tag
-//
 // * For each calendar, create a separate GCP Function that knows how to populate it
 //   * Make sure the members group has read access
 //   * Only the service account should have write access
@@ -57,7 +47,7 @@ async function buildGsuiteConnection() {
   return client.buildConnection('directory_v1')
 }
 
-async function syncGroups(manager, mailchimpGroups) {
+async function syncGroupsFromMailchimpToGoogle(manager, mailchimpGroups) {
   console.info('Synching these Mailchimp groups to GSuite:', mailchimpGroups)
 
   const gsuiteGroups = await manager.getGroups().then(groups => groups.map(group => group.name.toLowerCase()))
@@ -72,7 +62,7 @@ async function syncGroups(manager, mailchimpGroups) {
   await manager.deleteGroups(groupsToDelete)
 }
 
-async function syncUsersIntoGroups(manager, mailchimpGroupedUsers) {
+async function syncUsersFromMailchimpIntoGoogleGroups(manager, mailchimpGroupedUsers) {
   Object.entries(mailchimpGroupedUsers).forEach(async ([group, groupedUsers]) => {
     const mailchimpUsers = groupedUsers.map(user => user.email.toLowerCase())
     console.info(`Synching these Mailchimp users to GSuite group '${group}':`, mailchimpUsers)
@@ -98,7 +88,7 @@ async function run() {
   console.log(mailchimpGroupedUsers)
   const mailchimpGroups = Object.keys(mailchimpGroupedUsers).map(group => group.toLowerCase())
   console.info('Mailchimp reports these groups:', mailchimpGroups)
-  await syncGroups(manager, mailchimpGroups)
-  await syncUsersIntoGroups(manager, mailchimpGroupedUsers)
+  await syncGroupsFromMailchimpToGoogle(manager, mailchimpGroups)
+  await syncUsersFromMailchimpIntoGoogleGroups(manager, mailchimpGroupedUsers)
 }
 run().catch(e => console.log(e))
