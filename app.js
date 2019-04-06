@@ -2,8 +2,8 @@
 require('dotenv').config() // load gcloud credentials in dev
 
 const pluralize = require('pluralize')
+const {Secret} = require('@redeemerbc/secret')
 const {Mailchimp} = require('./lib/mailchimp')
-const {Secret} = require('./lib/secret')
 const {
   Client: GSuiteClient,
   GroupManager: GSuiteGroupManager,
