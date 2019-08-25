@@ -8,10 +8,10 @@
     "@redeemerbc/secret": "git+https://github.com/redeemer-baptist-church/npm-secret.git",
     "array.prototype.flat": "^1.2.1",
     "cheerio": "^1.0.0-rc.3",
-    "dayjs": "^1.8.14",
+    "dayjs": "^1.8.15",
     "dotenv": "^6.2.0",
-    "lodash": "^4.17.11",
-    "mailchimp-api-v3": "^1.12.1",
+    "lodash": "^4.17.15",
+    "mailchimp-api-v3": "^1.13.1",
     "ow": "^0.12.0",
     "pluralize": "^7.0.0",
     "spotify-web-api-node": "^4.0.0",
@@ -19,12 +19,12 @@
   },
   "devDependencies": {
     "chai": "^4.2.0",
-    "eslint": "^5.13.0",
-    "eslint-config-airbnb-base": "^13.1.0",
-    "eslint-plugin-import": "^2.16.0",
-    "eslint-plugin-jest": "^22.2.2",
-    "jest": "^24.0.0",
-    "sinon": "^7.2.3"
+    "eslint": "^5.16.0",
+    "eslint-config-airbnb-base": "^13.2.0",
+    "eslint-plugin-import": "^2.18.2",
+    "eslint-plugin-jest": "^22.15.2",
+    "jest": "^24.9.0",
+    "sinon": "^7.4.1"
   },
   "scripts": {
     "start": "node app.js",
