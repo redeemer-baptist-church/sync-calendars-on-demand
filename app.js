@@ -9,10 +9,7 @@ const unirest = require('unirest')
 const SpotifyWebApi = require('spotify-web-api-node')
 
 const {
-  Client: GSuiteClient,
-  CalendarManager: GSuiteCalendarManager,
-  GroupManager: GSuiteGroupManager,
-  PeopleManager: GSuitePeopleManager,
+  ManagerFactory: GSuiteManagerFactory,
 } = require('@redeemerbc/gsuite')
 const {Secret} = require('@redeemerbc/secret')
 const {Mailchimp} = require('./lib/mailchimp')
@@ -70,26 +67,15 @@ class MailchimpToGsuiteMembershipSync {
     }, {})
   }
 
-  async buildGsuiteAdminConnection() {
-    const scopes = [
-      'https://www.googleapis.com/auth/admin.directory.group', // admin access to create/update groups of users
-      'https://www.googleapis.com/auth/admin.directory.resource.calendar', // admin access to create/update calendars
-      'https://www.googleapis.com/auth/admin.directory.user.readonly', // readonly access to list all users XXX: do I actually need this?
-    ]
-    const client = new GSuiteClient(scopes, this.gsuiteServiceAccount)
-    return client.buildConnection('admin', 'directory_v1')
-  }
-
-  async buildGsuiteGroupManager() {
-    const connection = await this.buildGsuiteAdminConnection()
-    return new GSuiteGroupManager({connection, domain: 'redeemerbc.com'})
-  }
-
   async syncGroupsFromMailchimpToGoogle() {
     const mailchimpGroups = Object.keys(this.mailchimpGroupedUsers).map(group => group.toLowerCase())
 
     console.info('Synching these Mailchimp groups to GSuite:', mailchimpGroups)
-    const manager = await this.buildGsuiteGroupManager()
+    const scopes = [
+      'https://www.googleapis.com/auth/admin.directory.group', // admin access to create/update groups of users XXX: is there a better auth for groups?
+    ]
+    const manager = await GSuiteManagerFactory
+      .groupManager(scopes, this.gsuiteServiceAccount, {domain: 'redeemerbc.com'})
 
     const gsuiteGroups = await manager.getGroups().then(groups => groups.map(group => group.name.toLowerCase()))
     console.info('GSuite reports these groups:', gsuiteGroups)
@@ -104,7 +90,11 @@ class MailchimpToGsuiteMembershipSync {
   }
 
   async syncUsersFromMailchimpIntoGoogleGroups() {
-    const manager = await this.buildGsuiteGroupManager()
+    const scopes = [
+      'https://www.googleapis.com/auth/admin.directory.group', // admin access to create/update groups of users
+    ]
+    const manager = await GSuiteManagerFactory
+      .groupManager(scopes, this.gsuiteServiceAccount, {domain: 'redeemerbc.com'})
     Object.entries(this.mailchimpGroupedUsers).forEach(async ([group, groupedUsers]) => {
       const mailchimpUsers = groupedUsers.map(user => user.email.toLowerCase()).sort()
       console.info(`Synching these Mailchimp users to GSuite group '${group}':`, mailchimpUsers)
@@ -122,25 +112,17 @@ class MailchimpToGsuiteMembershipSync {
     })
   }
 
-  async buildGsuitePeopleConnection() {
-    const scopes = [
-      'https://www.googleapis.com/auth/contacts', // read/write acccess to contact lists
-    ]
-    const client = new GSuiteClient(scopes, this.gsuiteServiceAccount)
-    return client.buildConnection('people', 'v1')
-  }
-
-  async buildGsuitePeopleManager() {
-    const connection = await this.buildGsuitePeopleConnection()
-    return new GSuitePeopleManager({connection})
-  }
-
   async syncUsersFromMailchimpIntoGoogleContacts() {
     const mailchimpUsers = uniqBy(Object.values(this.mailchimpGroupedUsers).flat(), 'email')
     const mailchimpUserEmails = mailchimpUsers.map(user => user.email.toLowerCase()).sort()
     console.info('Synching these Mailchimp users to GSuite contacts:', mailchimpUserEmails)
 
-    const manager = await this.buildGsuitePeopleManager()
+
+    const scopes = [
+      'https://www.googleapis.com/auth/contacts', // read/write acccess to contact lists
+    ]
+    const manager = await GSuiteManagerFactory.peopleManager(scopes, this.gsuiteServiceAccount)
+
     const gsuiteContacts = await manager.getContacts({
       personFields: 'names,emailAddresses',
     })
@@ -172,21 +154,11 @@ class MailchimpNewsletterGenerator {
     return dayjs().startOf('week').add(1, 'weeks')
   }
 
-  async buildGsuiteCalendarConnection() {
+  async getCalendarData() {
     const scopes = [
       'https://www.googleapis.com/auth/calendar.readonly', // read-only acccess to calendar entries
     ]
-    const client = new GSuiteClient(scopes, this.gsuiteServiceAccount)
-    return client.buildConnection('calendar', 'v3')
-  }
-
-  async buildGsuiteCalendarManager() {
-    const connection = await this.buildGsuiteCalendarConnection()
-    return new GSuiteCalendarManager({connection})
-  }
-
-  async getCalendarData() {
-    const manager = await this.buildGsuiteCalendarManager()
+    const manager = await GSuiteManagerFactory.calendarManager(scopes, this.gsuiteServiceAccount)
     const calendars = await manager.getCalendars()
       .then(calendarList => calendarList.filter(calendar => !calendar.primary))
     console.info(`Google reports these calendars: ${calendars.map(c => c.summary)}`)
@@ -205,7 +177,7 @@ class MailchimpNewsletterGenerator {
         return `
           <b>${event.summary}</b>: ${attendees}
         `
-      })
+      }).join('')
       console.log(html)
     })
   }
