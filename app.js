@@ -5,14 +5,23 @@ const uniqBy = require('lodash/uniqBy')
 const cheerio = require('cheerio')
 const dayjs = require('dayjs')
 const pluralize = require('pluralize')
+const pretty = require('pretty')
 const unirest = require('unirest')
+const Q = require('q')
 const SpotifyWebApi = require('spotify-web-api-node')
+const url = require('url')
 
 const {
   ManagerFactory: GSuiteManagerFactory,
 } = require('@redeemerbc/gsuite')
 const {Secret} = require('@redeemerbc/secret')
 const {Mailchimp} = require('./lib/mailchimp')
+const {
+  MasterSchedule,
+  PeopleMapper,
+} = require('./lib/redeemerbc')
+
+// TODO: TypeScript, and nuke ow
 
 // TODO:
 // * For each calendar, create a separate GCP Function that knows how to populate it
@@ -56,7 +65,7 @@ class MailchimpToGsuiteMembershipSync {
         const tagName = pluralize.plural(tag.name)
         const group = tagGroups[tagName] || []
         group.push({
-          email: member.email,
+          email: member.email.toLowerCase(),
           name: member.name,
           firstName: member.firstName,
           lastName: member.lastName,
@@ -96,46 +105,56 @@ class MailchimpToGsuiteMembershipSync {
     const manager = await GSuiteManagerFactory
       .groupManager(scopes, this.gsuiteServiceAccount, {domain: 'redeemerbc.com'})
     Object.entries(this.mailchimpGroupedUsers).forEach(async ([group, groupedUsers]) => {
-      const mailchimpUsers = groupedUsers.map(user => user.email.toLowerCase()).sort()
+      const mailchimpUsers = groupedUsers.map(user => user.email).sort()
       console.info(`Synching these Mailchimp users to GSuite group '${group}':`, mailchimpUsers)
 
-      const gsuiteUsers = await manager.getUsers(group).then(users => users.map(user => user.email.toLowerCase()))
+      const gsuiteUsers = await manager.getUsers(group).then(users => users.map(user => user.email))
       console.info('GSuite reports these users:', gsuiteUsers)
-
-      const usersToCreate = mailchimpUsers.filter(u => !gsuiteUsers.includes(u))
-      console.info(`These users exist in Mailchimp but not in GSuite group ${group}:`, usersToCreate)
-      await manager.insertUsers(usersToCreate, group)
 
       const usersToDelete = gsuiteUsers.filter(u => !mailchimpUsers.includes(u))
       console.info(`These users exist in GSuite but not in Mailchimp group ${group}:`, usersToDelete)
       await manager.deleteUsers(usersToDelete, group)
+
+      const usersToCreate = mailchimpUsers.filter(u => !gsuiteUsers.includes(u))
+      console.info(`These users exist in Mailchimp but not in GSuite group ${group}:`, usersToCreate)
+      await manager.insertUsers(usersToCreate, group)
     })
   }
 
   async syncUsersFromMailchimpIntoGoogleContacts() {
     const mailchimpUsers = uniqBy(Object.values(this.mailchimpGroupedUsers).flat(), 'email')
-    const mailchimpUserEmails = mailchimpUsers.map(user => user.email.toLowerCase()).sort()
+    const mailchimpUserEmails = mailchimpUsers.map(user => user.email).sort()
     console.info('Synching these Mailchimp users to GSuite contacts:', mailchimpUserEmails)
 
+    const gsuiteContacts = await this.getGSuiteContacts()
+    const gsuiteContactEmails = gsuiteContacts.map(user => user.email).sort()
+    console.info('GSuite reports these users:', gsuiteContactEmails)
+
+    // TODO: sync first/last name changes from Mailchimp to here; usersToUpdate
 
     const scopes = [
       'https://www.googleapis.com/auth/contacts', // read/write acccess to contact lists
     ]
     const manager = await GSuiteManagerFactory.peopleManager(scopes, this.gsuiteServiceAccount)
 
-    const gsuiteContacts = await manager.getContacts({
-      personFields: 'names,emailAddresses',
-    })
-    const gsuiteContactEmails = gsuiteContacts.map(user => user.email.toLowerCase()).sort()
-    console.info('GSuite reports these users:', gsuiteContactEmails)
-
-    const usersToCreate = mailchimpUsers.filter(u => !gsuiteContactEmails.includes(u.email.toLowerCase()))
-    console.info('These users exist in Mailchimp but not in GSuite contacts:', usersToCreate)
-    await manager.createContacts(usersToCreate)
-
-    const usersToDelete = gsuiteContacts.filter(u => !mailchimpUserEmails.includes(u.email.toLowerCase()))
+    const usersToDelete = gsuiteContacts.filter(u => !mailchimpUserEmails.includes(u.email))
     console.info('These users exist in GSuite but not in Mailchimp contacts:', usersToDelete)
     await manager.deleteContacts(usersToDelete.map(user => user.resourceName))
+
+    const usersToCreate = mailchimpUsers.filter(u => !gsuiteContactEmails.includes(u.email))
+    console.info('These users exist in Mailchimp but not in GSuite contacts:', usersToCreate)
+    await manager.createContacts(usersToCreate)
+  }
+
+  async getGSuiteContacts() {
+    const scopes = [
+      'https://www.googleapis.com/auth/contacts.readonly', // read-only acccess to contact lists
+    ]
+    const manager = await GSuiteManagerFactory.peopleManager(scopes, this.gsuiteServiceAccount)
+
+    return manager.getContacts({
+      personFields: 'names,emailAddresses',
+    })
   }
 }
 
@@ -146,7 +165,6 @@ class MailchimpNewsletterGenerator {
   }
 
   async run() {
-    await this.getCalendarData() // TODO: call from publishMailchimpNewsletterTemplate()
     await this.publishMailchimpNewsletterTemplate()
   }
 
@@ -154,32 +172,66 @@ class MailchimpNewsletterGenerator {
     return dayjs().startOf('week').add(1, 'weeks')
   }
 
-  async getCalendarData() {
+  async buildGSuitePeopleMapper() {
+    const gsuiteContacts = await this.getGSuiteContacts()
+    return new PeopleMapper(gsuiteContacts)
+  }
+
+  async getGSuiteContacts() {
+    const scopes = [
+      'https://www.googleapis.com/auth/contacts.readonly', // read-only acccess to contact lists
+    ]
+    const manager = await GSuiteManagerFactory.peopleManager(scopes, this.gsuiteServiceAccount)
+
+    return manager.getContacts({
+      personFields: 'names,emailAddresses',
+    })
+  }
+
+  async getCalendarHtml() {
+    const peopleMapper = await this.buildGSuitePeopleMapper()
+
     const scopes = [
       'https://www.googleapis.com/auth/calendar.readonly', // read-only acccess to calendar entries
     ]
     const manager = await GSuiteManagerFactory.calendarManager(scopes, this.gsuiteServiceAccount)
     const calendars = await manager.getCalendars()
-      .then(calendarList => calendarList.filter(calendar => !calendar.primary))
+      .then(calendarList => calendarList
+        .filter(calendar => !calendar.primary)
+        .sort((a, b) => a.summary.localeCompare(b.summary)))
     console.info(`Google reports these calendars: ${calendars.map(c => c.summary)}`)
-    // calendars.forEach(async (calendar) => {
-    const calendar = calendars[0]
-    await manager.getEvents({
-      calendarId: calendar.id,
-      singleEvents: true,
-      timeMax: this.serviceDate.endOf('day').toISOString(),
-      timeMin: this.serviceDate.subtract(6, 'days').toISOString(),
-    }).then((events) => {
-      const html = events.map((event) => {
-        // TODO: get People/Contacts, indexed by email address and map attendees by email
-        console.log(event.attendees)
-        const attendees = event.attendees.map(attendee => attendee.email).join(',')
-        return `
-          <b>${event.summary}</b>: ${attendees}
-        `
-      }).join('')
-      console.log(html)
-    })
+    // const html = await calendars.forEach(async (calendar) => {
+    // XXX - eeewwww
+    // https://decembersoft.com/posts/promises-in-serial-with-array-reduce/
+    const calendarPromises = calendars.reduce((promiseChain, calendar) => {
+      return promiseChain.then((chainResults) => {
+        const currentResult = calendar.getEvents({
+          singleEvents: true,
+          timeMax: this.serviceDate.endOf('day').toISOString(),
+          timeMin: this.serviceDate.subtract(6, 'days').toISOString(),
+        }).then((events) => {
+          if (events.length == 0) {
+            return ''
+          }
+          const calendarLink = `https://calendar.google.com/calendar?cid=${calendar.id}`
+          const calendarHtml = `<dt><b><a href="${calendarLink}">${calendar.summary}</a></b></dt>`
+          const eventsHtml = events.map((event) => {
+            const eventLabel = event.label.replace(`${calendar.summary} - `, '')
+            // TODO: get People/Contacts, indexed by email address and map attendees by email
+            const attendees = event.attendees.map(attendee => peopleMapper.personByEmail(attendee).fullName).join(', ')
+            return `<dd><i>${eventLabel}</i>: ${attendees}</dd>`
+          }).join('')
+          return `${calendarHtml} ${eventsHtml}`
+        })
+        return [...chainResults, currentResult]
+      })
+    }, Promise.resolve([]))
+    const html = await calendarPromises
+      .then(arrayOfResults => Promise.all(arrayOfResults))
+      .then(htmlArray => `<dl>${htmlArray.filter(Boolean).join('')}</dl>`)
+    // console.log(pretty(html))
+    // throw 'foo'
+    return html
   }
 
   async getSermonPassage(reference) { // eslint-disable-line class-methods-use-this
@@ -206,8 +258,9 @@ class MailchimpNewsletterGenerator {
     await spotifyApi.clientCredentialsGrant()
       .then(json => spotifyApi.setAccessToken(json.body.access_token))
 
+    // TODO: Make tracks an object with a sanitizeTrackName() method
     return spotifyApi.getPlaylist(playlistId)
-      .then(json => json.body.tracks.items.map(item => item.track.name))
+      .then(json => json.body.tracks.items.map(item => item.track.name.replace(' - Live', '')))
   }
 
   async getTemplateHtmlFromMailchimp() {
@@ -215,6 +268,7 @@ class MailchimpNewsletterGenerator {
     const mailchimp = new Mailchimp(this.mailchimpApiKey)
 
     console.info(`Creating temporary Mailchimp campaign based on template ${templateId}`)
+    // TODO: extract into mailchimp.createCampaign()
     return mailchimp.client.post('/campaigns', {
       type: 'regular',
       settings: {
@@ -240,22 +294,284 @@ class MailchimpNewsletterGenerator {
     $("[data-redeemer-bot='sermonDate']").text(this.serviceDate.format('dddd, MMMM D, YYYY'))
 
     // replace the sermon passage
-    const reference = 'Psalm 110'
+    const reference = '1 Peter 5:1-5'
     const passage = await this.getSermonPassage(reference)
     $("[data-redeemer-bot='sermonPassage']")
       .html(`${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full chapter here</a>`)
 
     // replace the Spotify playlist
-    const playlistId = '4OutCdT5HD7S0h7L4T0osu'
+    const playlistUrl = 'https://open.spotify.com/playlist/3872JWxvCOYoSRCe1MYSly'
+    const playlistId = url.parse(playlistUrl).pathname.split('/').slice(-1)[0]
     const tracks = await this.getSpotifyTracks(playlistId)
     const playlistLink = `<a href="https://open.spotify.com/playlist/${playlistId}">This week's playlist</a>`
     $("[data-redeemer-bot='serviceMusic']").html(`${playlistLink}<br />${tracks.join('<br />')}`)
 
+    const calendarHtml = await this.getCalendarHtml()
+    // TODO: add CSS around this so the pretty template looks good
+    $("[data-redeemer-bot='weeklyCalendars']").html(calendarHtml)
+
     console.info('Publishing the fully fleshed out HTML template to Mailchimp')
     await mailchimp.client.patch('/templates/359109', {
       name: 'RedeemerBot - Processed Newsletter Template',
-      html: $.html(),
+      html: pretty($.html(), {ocd: true}),
     }).then(json => console.log(json))
+  }
+}
+
+class GoogleSheetsToGoogleCalendarSync {
+  constructor(gsuiteServiceAccount) {
+    this.gsuiteServiceAccount = gsuiteServiceAccount
+  }
+
+  async run() {
+    // TODO: GSuite "Error: Rate Limit Exceeded"
+    // TODO: GSuite "Calendar usage limits exceeded"
+    const masterSchedule = await this.getSheetsMasterSchedule()
+    const scheduleGroups = masterSchedule.subSchedules.reduce((table, schedule) => {
+      table[schedule.calendarId] = table[schedule.calendarId] || [] // eslint-disable-line no-param-reassign
+      table[schedule.calendarId].push(schedule)
+      return table
+    }, {})
+
+    /*
+    const index = 3
+    const myScheduleGroup = Object.values(scheduleGroups)[index]
+    const myCalendarId = Object.keys(scheduleGroups)[index]
+    return await this.syncScheduleGroupToGoogleCalendar(myCalendarId, myScheduleGroup)
+    */
+
+    Object.keys(scheduleGroups).forEach(async (calendarId) => {
+      const scheduleGroup = scheduleGroups[calendarId]
+      await this.syncScheduleGroupToGoogleCalendar(calendarId, scheduleGroup)
+    })
+  }
+
+  async buildGSuitePeopleMapper() {
+    const gsuiteContacts = await this.getGSuiteContacts()
+    return new PeopleMapper(gsuiteContacts)
+  }
+
+  async getGSuiteContacts() {
+    const scopes = [
+      'https://www.googleapis.com/auth/contacts.readonly', // read-only acccess to contact lists
+    ]
+    const manager = await GSuiteManagerFactory.peopleManager(scopes, this.gsuiteServiceAccount)
+
+    return manager.getContacts({
+      personFields: 'names,emailAddresses',
+    })
+  }
+
+  async getSheetsMasterSchedule() {
+    const scopes = [
+      'https://www.googleapis.com/auth/spreadsheets.readonly', // read-only access to spreadsheets
+    ]
+    const manager = await GSuiteManagerFactory.sheetsManager(scopes, this.gsuiteServiceAccount)
+    const masterScheduleSheetId = '1RMPEOOnIixOftIKt5VGA1LBQFoWh0-_ohnt34JTnpWw'
+    const masterScheduleSheet = await manager.getSpreadsheet(masterScheduleSheetId)
+    const sheet = masterScheduleSheet.getSheet(0)
+    const allCells = await manager.getRange({
+      spreadsheetId: masterScheduleSheetId,
+      range: sheet.sheetName,
+      majorDimension: 'COLUMNS',
+      valueRenderOption: 'FORMULA',
+      dateTimeRenderOption: 'SERIAL_NUMBER',
+    })
+    return new MasterSchedule({data: allCells.data})
+  }
+
+  async syncScheduleGroupToGoogleCalendar(calendarId, scheduleGroup) {
+    // TODO: CalendarManager and friends should provide scope enums: READ_WRITE, READ_ONLY
+    const scopes = [
+      'https://www.googleapis.com/auth/calendar', // read/write acccess to calendar entries
+    ]
+    const manager = await GSuiteManagerFactory.calendarManager(scopes, this.gsuiteServiceAccount)
+
+    const events = scheduleGroup.reduce((eventList, schedule) => {
+      eventList.push(schedule.events)
+      return eventList
+    }, []).flat()
+    // TODO: timeMin should be max(firstEvent, today()) - that is, don't change events that already happened
+    // - need to also filter out old scheduleEvents so we don't re-create old events
+    const firstEvent = events[0]
+    const lastEvent = events.slice(-1).pop()
+    const calendar = await manager.getCalendar(calendarId)
+    const existingCalendarEvents = await calendar.getEvents({
+      singleEvents: true,
+      timeMin: firstEvent.startDateTime.startOf('day').toISOString(),
+      timeMax: lastEvent.endDateTime.endOf('day').toISOString(),
+    })
+
+    const peopleMapper = await this.buildGSuitePeopleMapper()
+    const scheduleEvents = events.map(e => e.simulateAGoogleCalendarEvent(calendar, peopleMapper))
+
+    class EventSyncer {
+      constructor(options = {}) {
+        /*
+        ow(options, ow.exactShape({
+          scheduleEvent: ow.optional.object,
+          calendarEvent: ow.optional.object,
+        }))
+        */
+        this.props = options
+      }
+
+      get scheduleEvent() {
+        return this.props.scheduleEvent
+      }
+
+      set scheduleEvent(scheduleEvent) {
+        this.props.scheduleEvent = scheduleEvent
+      }
+
+      get calendarEvent() {
+        return this.props.calendarEvent
+      }
+
+      set calendarEvent(calendarEvent) {
+        this.props.calendarEvent = calendarEvent
+      }
+
+      get shouldDeleteCalendarEvent() {
+        return this.calendarEvent && !this.scheduleEvent
+      }
+
+      get shouldCreateCalendarEvent() {
+        return !this.calendarEvent && this.scheduleEvent
+      }
+
+      serializeEvent(event) { // eslint-disable-line class-methods-use-this
+        return `${event.label} - ${dayjs(event.start).toISOString()} - ${dayjs(event.end).toISOString()} - ${event.attendees.sort()}`
+      }
+
+      serializeCalendarEvent() {
+        return this.serializeEvent(this.calendarEvent)
+      }
+
+      serializeScheduleEvent() {
+        return this.serializeEvent(this.scheduleEvent)
+      }
+
+      /*
+      get eventsAreSynced() {
+        return this.scheduleEvent && this.calendarEvent && !this.shouldUpdateCalendarEvent
+      }
+      */
+
+      get shouldUpdateCalendarEvent() {
+        return this.serializeCalendarEvent() !== this.serializeScheduleEvent()
+      }
+
+      get syncActionName() {
+        if (this.shouldDeleteCalendarEvent) {
+          return 'delete'
+        }
+        if (this.shouldCreateCalendarEvent) {
+          return 'create'
+        }
+        if (this.shouldUpdateCalendarEvent) {
+          return 'update'
+        }
+        return 'synced'
+      }
+
+      async sync() {
+        return Promise.resolve()
+        if (this.shouldDeleteCalendarEvent) {
+          return this.deleteCalendarEvent()
+        }
+        if (this.shouldCreateCalendarEvent) {
+          return this.createCalendarEvent()
+        }
+        if (this.shouldUpdateCalendarEvent) {
+          return this.updateCalendarEvent()
+        }
+        return Promise.resolve()
+      }
+
+      async deleteCalendarEvent() {
+        return this.calendarEvent.deleteEvent({
+          sendUpdates: 'none',
+        })
+      }
+
+      async createCalendarEvent() {
+        // TODO: reconcile all this naming: scheduleEvent -> spreadsheetEvent
+        return this.scheduleEvent.createEvent({
+          sendUpdates: 'none',
+        })
+      }
+
+      async updateCalendarEvent() {
+        return this.calendarEvent.updateEvent({
+          sendUpdates: 'all',
+          resource: this.scheduleEvent.properties,
+        })
+      }
+    }
+
+    class EventMapper {
+      constructor() {
+        this.eventMap = {}
+      }
+
+      push(event) {
+        // ow(event, ow.object)
+        const eventId = `${event.label} - ${dayjs(event.start).startOf('day')}`
+        const syncer = this.eventMap[eventId] || new EventSyncer()
+        if (event.id) {
+          syncer.calendarEvent = event
+        } else {
+          syncer.scheduleEvent = event
+        }
+        this.eventMap[eventId] = syncer
+      }
+
+      get eventPairs() {
+        return Object.values(this.eventMap)
+      }
+
+      toActionBuckets() {
+        return this.eventPairs.reduce((buckets, syncer) => {
+          const action = syncer.syncActionName
+          buckets[action] = buckets[action] || [] // eslint-disable-line no-param-reassign
+          buckets[action].push(syncer)
+          return buckets
+        }, {})
+      }
+    }
+
+    const eventMapper = new EventMapper()
+    scheduleEvents.concat(existingCalendarEvents).forEach(event => eventMapper.push(event))
+    const eventActionBuckets = Object.assign(
+      {
+        synced: [],
+        update: [],
+        create: [],
+        delete: [],
+      },
+      eventMapper.toActionBuckets(),
+    )
+
+    console.info(`These Spreadsheet events have previously been synced to Calendar '${calendar.summary}'`,
+      eventActionBuckets.synced.map(e => e.serializeCalendarEvent()))
+
+    console.info(`These Spreadsheet events will be updated in Calendar '${calendar.summary}'`,
+      eventActionBuckets.update.map(e => `${e.serializeCalendarEvent()} => ${e.serializeScheduleEvent()}`))
+    await eventActionBuckets.update.map(e => e.sync()).reduce(Q.when, Q())
+
+    console.info(`These Spreadsheet events will be created in Calendar '${calendar.summary}'`,
+      eventActionBuckets.create.map(e => e.serializeScheduleEvent()))
+    // await eventActionBuckets.create.map(e => e.sync()).reduce(Q.when, Q())
+    // TODO: desperately need to understand how to serialize execution of async promises
+    // - need to sync each event in serial, because this map is executing them all simultaneously
+    //   and flooding my rate limit something awful
+    // - need to also nuke this seemingly unhelpful Q library
+    await eventActionBuckets.create.slice(0, 3).map(e => e.sync()).reduce(Q.when, Q())
+
+    console.info(`These Calendar events will be deleted from Calendar '${calendar.summary}'`,
+      eventActionBuckets.delete.map(e => e.serializeCalendarEvent()))
+    await eventActionBuckets.delete.map(e => e.sync()).reduce(Q.when, Q())
   }
 }
 
@@ -264,8 +580,9 @@ class App {
     this.gsuiteServiceAccount = await new Secret('GsuiteServiceAccount').get()
     this.mailchimpApiKey = await new Secret('MailchimpApiKey').get()
 
-    await new MailchimpToGsuiteMembershipSync(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
-    await new MailchimpNewsletterGenerator(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
+    // await new MailchimpToGsuiteMembershipSync(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
+    // await new MailchimpNewsletterGenerator(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
+    await new GoogleSheetsToGoogleCalendarSync(this.gsuiteServiceAccount).run()
   }
 }
 
