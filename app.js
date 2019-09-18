@@ -300,10 +300,11 @@ class MailchimpNewsletterGenerator {
       .html(`${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full chapter here</a>`)
 
     // replace the Spotify playlist
-    const playlistUrl = 'https://open.spotify.com/playlist/3872JWxvCOYoSRCe1MYSly'
+    const playlistUrl = 'https://open.spotify.com/playlist/2HoaFy0dLN5hs0EbMcUdJU'
     const playlistId = url.parse(playlistUrl).pathname.split('/').slice(-1)[0]
     const tracks = await this.getSpotifyTracks(playlistId)
-    const playlistLink = `<a href="https://open.spotify.com/playlist/${playlistId}">This week's playlist</a>`
+    const playlistLink = `<b>This week's playlist, on <a href="https://open.spotify.com/playlist/${playlistId}">Spotify</a>`
+      + ' and <a href="https://music.youtube.com/playlist?list=PLt11S0kjDvef_xLiQv103MdVRe1LiPGG0">YouTube</a></b><br />'
     $("[data-redeemer-bot='serviceMusic']").html(`${playlistLink}<br />${tracks.join('<br />')}`)
 
     const calendarHtml = await this.getCalendarHtml()
