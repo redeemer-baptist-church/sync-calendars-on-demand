@@ -7,7 +7,6 @@ const dayjs = require('dayjs')
 const pluralize = require('pluralize')
 const pretty = require('pretty')
 const unirest = require('unirest')
-const Q = require('q')
 const SpotifyWebApi = require('spotify-web-api-node')
 const url = require('url')
 
@@ -20,6 +19,14 @@ const {
   MasterSchedule,
   PeopleMapper,
 } = require('./lib/redeemerbc')
+
+// TODO: extract into redeemerbc helper class/module
+// https://stackoverflow.com/a/41115086/421313
+const serialize = (listOfFunctions) => { // eslint-disable-line arrow-body-style
+  return listOfFunctions.reduce((promise, func) => { // eslint-disable-line arrow-body-style
+    return promise.then(result => func.then(Array.prototype.concat.bind(result)))
+  }, Promise.resolve([]))
+}
 
 // TODO: TypeScript, and nuke ow
 
@@ -165,6 +172,7 @@ class MailchimpNewsletterGenerator {
   }
 
   async run() {
+    this.peopleMapper = await this.buildGSuitePeopleMapper()
     await this.publishMailchimpNewsletterTemplate()
   }
 
@@ -188,9 +196,27 @@ class MailchimpNewsletterGenerator {
     })
   }
 
-  async getCalendarHtml() {
-    const peopleMapper = await this.buildGSuitePeopleMapper()
+  async buildEventsHtmlForCalendar(calendar) {
+    return calendar.getEvents({
+      singleEvents: true,
+      timeMax: this.serviceDate.endOf('day').toISOString(),
+      timeMin: this.serviceDate.subtract(6, 'days').toISOString(),
+    }).then((events) => {
+      if (events.length === 0) {
+        return ''
+      }
+      const calendarLink = `https://calendar.google.com/calendar?cid=${calendar.id}`
+      const calendarHtml = `<dt><b><a href="${calendarLink}">${calendar.summary}</a></b></dt>`
+      const eventsHtml = events.map((event) => {
+        const eventLabel = event.label.replace(`${calendar.summary} - `, '')
+        const attendees = event.attendees.map(attendee => this.peopleMapper.personByEmail(attendee).fullName).join(', ')
+        return `<dd><i>${eventLabel}</i>: ${attendees}</dd>`
+      }).join('')
+      return `${calendarHtml} ${eventsHtml}`
+    })
+  }
 
+  async getCalendarHtml() {
     const scopes = [
       'https://www.googleapis.com/auth/calendar.readonly', // read-only acccess to calendar entries
     ]
@@ -200,34 +226,7 @@ class MailchimpNewsletterGenerator {
         .filter(calendar => !calendar.primary)
         .sort((a, b) => a.summary.localeCompare(b.summary)))
     console.info(`Google reports these calendars: ${calendars.map(c => c.summary)}`)
-    // const html = await calendars.forEach(async (calendar) => {
-    // XXX - eeewwww
-    // https://decembersoft.com/posts/promises-in-serial-with-array-reduce/
-    const calendarPromises = calendars.reduce((promiseChain, calendar) => {
-      return promiseChain.then((chainResults) => {
-        const currentResult = calendar.getEvents({
-          singleEvents: true,
-          timeMax: this.serviceDate.endOf('day').toISOString(),
-          timeMin: this.serviceDate.subtract(6, 'days').toISOString(),
-        }).then((events) => {
-          if (events.length == 0) {
-            return ''
-          }
-          const calendarLink = `https://calendar.google.com/calendar?cid=${calendar.id}`
-          const calendarHtml = `<dt><b><a href="${calendarLink}">${calendar.summary}</a></b></dt>`
-          const eventsHtml = events.map((event) => {
-            const eventLabel = event.label.replace(`${calendar.summary} - `, '')
-            // TODO: get People/Contacts, indexed by email address and map attendees by email
-            const attendees = event.attendees.map(attendee => peopleMapper.personByEmail(attendee).fullName).join(', ')
-            return `<dd><i>${eventLabel}</i>: ${attendees}</dd>`
-          }).join('')
-          return `${calendarHtml} ${eventsHtml}`
-        })
-        return [...chainResults, currentResult]
-      })
-    }, Promise.resolve([]))
-    const html = await calendarPromises
-      .then(arrayOfResults => Promise.all(arrayOfResults))
+    const html = await serialize(calendars.map(calendar => this.buildEventsHtmlForCalendar(calendar)))
       .then(htmlArray => `<dl>${htmlArray.filter(Boolean).join('')}</dl>`)
     // console.log(pretty(html))
     // throw 'foo'
@@ -247,6 +246,11 @@ class MailchimpNewsletterGenerator {
         'include-short-copyright': false,
       })
       .then(response => response.body.passages[0])
+  }
+
+  async getSermonPassageHtml(reference) {
+    const passage = await this.getSermonPassage(reference)
+    return `${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full chapter here</a>`
   }
 
   async getSpotifyTracks(playlistId) { // eslint-disable-line class-methods-use-this
@@ -294,10 +298,14 @@ class MailchimpNewsletterGenerator {
     $("[data-redeemer-bot='sermonDate']").text(this.serviceDate.format('dddd, MMMM D, YYYY'))
 
     // replace the sermon passage
-    const reference = '1 Peter 5:1-5'
-    const passage = await this.getSermonPassage(reference)
-    $("[data-redeemer-bot='sermonPassage']")
-      .html(`${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full chapter here</a>`)
+    const references = [
+      'Revelation 21:1-8',
+      'Revelation 22:1-5',
+    ]
+
+    const sermonPassageHtml = await serialize(references.map(reference => this.getSermonPassageHtml(reference)))
+      .then(html => html.join(''))
+    $("[data-redeemer-bot='sermonPassage']").html(sermonPassageHtml)
 
     // replace the Spotify playlist
     const playlistUrl = 'https://open.spotify.com/playlist/2HoaFy0dLN5hs0EbMcUdJU'
@@ -559,20 +567,15 @@ class GoogleSheetsToGoogleCalendarSync {
 
     console.info(`These Spreadsheet events will be updated in Calendar '${calendar.summary}'`,
       eventActionBuckets.update.map(e => `${e.serializeCalendarEvent()} => ${e.serializeScheduleEvent()}`))
-    await eventActionBuckets.update.map(e => e.sync()).reduce(Q.when, Q())
+    await serialize(eventActionBuckets.update.map(e => e.sync()))
 
     console.info(`These Spreadsheet events will be created in Calendar '${calendar.summary}'`,
       eventActionBuckets.create.map(e => e.serializeScheduleEvent()))
-    // await eventActionBuckets.create.map(e => e.sync()).reduce(Q.when, Q())
-    // TODO: desperately need to understand how to serialize execution of async promises
-    // - need to sync each event in serial, because this map is executing them all simultaneously
-    //   and flooding my rate limit something awful
-    // - need to also nuke this seemingly unhelpful Q library
-    await eventActionBuckets.create.slice(0, 3).map(e => e.sync()).reduce(Q.when, Q())
+    await serialize(eventActionBuckets.create.map(e => e.sync()))
 
     console.info(`These Calendar events will be deleted from Calendar '${calendar.summary}'`,
       eventActionBuckets.delete.map(e => e.serializeCalendarEvent()))
-    await eventActionBuckets.delete.map(e => e.sync()).reduce(Q.when, Q())
+    await serialize(eventActionBuckets.delete.map(e => e.sync()))
   }
 }
 
