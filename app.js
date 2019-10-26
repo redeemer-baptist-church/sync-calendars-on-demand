@@ -209,7 +209,7 @@ class MailchimpNewsletterGenerator {
       const calendarHtml = `<dt><b><a href="${calendarLink}">${calendar.summary}</a></b></dt>`
       const eventsHtml = events.map((event) => {
         const eventLabel = event.label.replace(`${calendar.summary} - `, '')
-        const attendees = event.attendees.map(attendee => this.peopleMapper.personByEmail(attendee).fullName).join(', ')
+        const attendees = event.attendees.map(attendee => this.peopleMapper.personByEmail(attendee).fullName).join(', ') || event.description
         return `<dd><i>${eventLabel}</i>: ${attendees}</dd>`
       }).join('')
       return `${calendarHtml} ${eventsHtml}`
@@ -228,9 +228,9 @@ class MailchimpNewsletterGenerator {
     console.info(`Google reports these calendars: ${calendars.map(c => c.summary)}`)
     const html = await serialize(calendars.map(calendar => this.buildEventsHtmlForCalendar(calendar)))
       .then(htmlArray => `<dl>${htmlArray.filter(Boolean).join('')}</dl>`)
-    // console.log(pretty(html))
-    // throw 'foo'
-    return html
+    const masterScheduleHtml = '<dt><b><a href="https://docs.google.com/spreadsheets/d/1RMPEOOnIixOftIKt5VGA1LBQFoWh0-_ohnt34JTnpWw/edit#gid=0">Master Schedule</a></b></dt>'
+
+    return `${html}${masterScheduleHtml}`
   }
 
   async getSermonPassage(reference) { // eslint-disable-line class-methods-use-this
@@ -250,7 +250,7 @@ class MailchimpNewsletterGenerator {
 
   async getSermonPassageHtml(reference) {
     const passage = await this.getSermonPassage(reference)
-    return `${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full chapter here</a>`
+    return `${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full passage here</a>`
   }
 
   async getSpotifyTracks(playlistId) { // eslint-disable-line class-methods-use-this
@@ -297,15 +297,22 @@ class MailchimpNewsletterGenerator {
     // replace the sermon date
     $("[data-redeemer-bot='sermonDate']").text(this.serviceDate.format('dddd, MMMM D, YYYY'))
 
-    // replace the sermon passage
-    const references = [
-      'Revelation 21:1-8',
-      'Revelation 22:1-5',
+    // replace the sermon passages
+    const otReferences = [
+      'Ezra 4',
     ]
 
-    const sermonPassageHtml = await serialize(references.map(reference => this.getSermonPassageHtml(reference)))
+    const otPassageHtml = await serialize(otReferences.map(reference => this.getSermonPassageHtml(reference)))
       .then(html => html.join(''))
-    $("[data-redeemer-bot='sermonPassage']").html(sermonPassageHtml)
+    $("[data-redeemer-bot='otPassage']").html(otPassageHtml)
+
+    const ntReferences = [
+      'Jude 17-24',
+    ]
+
+    const ntPassageHtml = await serialize(ntReferences.map(reference => this.getSermonPassageHtml(reference)))
+      .then(html => html.join(''))
+    $("[data-redeemer-bot='ntPassage']").html(ntPassageHtml)
 
     // replace the Spotify playlist
     const playlistUrl = 'https://open.spotify.com/playlist/2HoaFy0dLN5hs0EbMcUdJU'
@@ -341,13 +348,6 @@ class GoogleSheetsToGoogleCalendarSync {
       table[schedule.calendarId].push(schedule)
       return table
     }, {})
-
-    /*
-    const index = 3
-    const myScheduleGroup = Object.values(scheduleGroups)[index]
-    const myCalendarId = Object.keys(scheduleGroups)[index]
-    return await this.syncScheduleGroupToGoogleCalendar(myCalendarId, myScheduleGroup)
-    */
 
     Object.keys(scheduleGroups).forEach(async (calendarId) => {
       const scheduleGroup = scheduleGroups[calendarId]
@@ -485,7 +485,7 @@ class GoogleSheetsToGoogleCalendarSync {
       }
 
       async sync() {
-        return Promise.resolve()
+        // return Promise.resolve()
         if (this.shouldDeleteCalendarEvent) {
           return this.deleteCalendarEvent()
         }
@@ -585,8 +585,8 @@ class App {
     this.mailchimpApiKey = await new Secret('MailchimpApiKey').get()
 
     // await new MailchimpToGsuiteMembershipSync(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
-    // await new MailchimpNewsletterGenerator(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
-    await new GoogleSheetsToGoogleCalendarSync(this.gsuiteServiceAccount).run()
+    await new MailchimpNewsletterGenerator(this.gsuiteServiceAccount, this.mailchimpApiKey).run()
+    // await new GoogleSheetsToGoogleCalendarSync(this.gsuiteServiceAccount).run()
   }
 }
 
