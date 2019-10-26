@@ -253,6 +253,11 @@ class MailchimpNewsletterGenerator {
     return `${passage}<a href="http://esv.to/${reference}" target="_blank">Read the full passage here</a>`
   }
 
+  async buildSermonPassageHtml(references) {
+    return serialize(references.map(reference => this.getSermonPassageHtml(reference)))
+      .then(html => html.join(''))
+  }
+
   async getSpotifyTracks(playlistId) { // eslint-disable-line class-methods-use-this
     console.info(`Getting Spotify tracks for playlist ${playlistId}`)
     const clientId = await new Secret('SpotifyClientId').get()
@@ -301,18 +306,12 @@ class MailchimpNewsletterGenerator {
     const otReferences = [
       'Ezra 4',
     ]
-
-    const otPassageHtml = await serialize(otReferences.map(reference => this.getSermonPassageHtml(reference)))
-      .then(html => html.join(''))
-    $("[data-redeemer-bot='otPassage']").html(otPassageHtml)
+    $("[data-redeemer-bot='otPassage']").html(await this.buildSermonPassageHtml(otReferences))
 
     const ntReferences = [
-      'Jude 17-24',
+      'Jude 17-25',
     ]
-
-    const ntPassageHtml = await serialize(ntReferences.map(reference => this.getSermonPassageHtml(reference)))
-      .then(html => html.join(''))
-    $("[data-redeemer-bot='ntPassage']").html(ntPassageHtml)
+    $("[data-redeemer-bot='ntPassage']").html(await this.buildSermonPassageHtml(ntReferences))
 
     // replace the Spotify playlist
     const playlistUrl = 'https://open.spotify.com/playlist/2HoaFy0dLN5hs0EbMcUdJU'
