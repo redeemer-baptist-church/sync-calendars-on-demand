@@ -6,6 +6,7 @@
   "dependencies": {
     "@redeemerbc/gsuite": "git+https://github.com/redeemer-baptist-church/gsuite.git",
     "@redeemerbc/secret": "git+https://github.com/redeemer-baptist-church/npm-secret.git",
+    "@redeemerbc/serialize": "git+https://github.com/redeemer-baptist-church/npm-serialize.git",
     "array.prototype.flat": "^1.2.1",
     "cheerio": "^1.0.0-rc.3",
     "dayjs": "^1.8.15",
