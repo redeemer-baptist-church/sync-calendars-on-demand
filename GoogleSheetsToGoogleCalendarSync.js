@@ -87,8 +87,8 @@ class GoogleSheetsToGoogleCalendarSync {
     const calendar = await manager.getCalendar(calendarId)
     const existingCalendarEvents = await calendar.getEvents({
       singleEvents: true,
-      timeMin: firstEvent.startDateTime.startOf('day').toISOString(),
-      timeMax: lastEvent.endDateTime.endOf('day').toISOString(),
+      timeMin: firstEvent.date.startOf('day').toISOString(),
+      timeMax: lastEvent.date.endOf('day').toISOString(),
     })
 
     const peopleMapper = await this.buildGSuitePeopleMapper()
@@ -133,7 +133,8 @@ class GoogleSheetsToGoogleCalendarSync {
         return `${event.label} - `
           + `${dayjs(event.start).toISOString()} - `
           + `${dayjs(event.end).toISOString()} - `
-          + `${event.attendees.sort()}`
+          + `${event.attendees.sort()} - `
+          + `${event.description}`
       }
 
       serializeCalendarEvent() {
