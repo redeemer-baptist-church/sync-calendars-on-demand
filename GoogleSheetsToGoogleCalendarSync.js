@@ -4,10 +4,8 @@ const {
   ManagerFactory: GSuiteManagerFactory,
 } = require('@redeemerbc/gsuite')
 const {serialize} = require('@redeemerbc/serialize')
-const {
-  MasterSchedule,
-  PeopleMapper,
-} = require('./lib/redeemerbc')
+const {MasterSchedule} = require('./lib/redeemerbc/schedules')
+const {PeopleMapper} = require('./lib/redeemerbc')
 
 // TODO: calendar scheduling UI
 // * Create a calendar for each position - CM Littles, CM Kids, Setup Truck, etc
@@ -68,7 +66,7 @@ class GoogleSheetsToGoogleCalendarSync {
       valueRenderOption: 'FORMULA',
       dateTimeRenderOption: 'SERIAL_NUMBER',
     })
-    return new MasterSchedule({data: allCells.data})
+    return new MasterSchedule({data: allCells.data, sheet})
   }
 
   async syncScheduleGroupToGoogleCalendar(calendarId, scheduleGroup) {
