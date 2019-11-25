@@ -134,7 +134,7 @@ class GoogleSheetsToGoogleCalendarSync {
           + `${dayjs(event.start).toISOString()} - `
           + `${dayjs(event.end).toISOString()} - `
           + `${event.attendees.sort()} - `
-          + `${event.description}`
+          + `${event.description || ''}`
       }
 
       serializeCalendarEvent() {
