@@ -253,15 +253,15 @@ class GoogleSheetsToGoogleCalendarSync {
 
     console.info(`These Spreadsheet events will be updated in Calendar '${calendar.summary}'`,
       eventActionBuckets.update.map(e => `${e.serializeCalendarEvent()} => ${e.serializeScheduleEvent()}`))
-    await serialize(eventActionBuckets.update.map(e => e.sync()))
+    await serialize(eventActionBuckets.update.map(e => () => e.sync()))
 
     console.info(`These Spreadsheet events will be created in Calendar '${calendar.summary}'`,
       eventActionBuckets.create.map(e => e.serializeScheduleEvent()))
-    await serialize(eventActionBuckets.create.map(e => e.sync()))
+    await serialize(eventActionBuckets.create.map(e => () => e.sync()))
 
     console.info(`These Calendar events will be deleted from Calendar '${calendar.summary}'`,
       eventActionBuckets.delete.map(e => e.serializeCalendarEvent()))
-    await serialize(eventActionBuckets.delete.map(e => e.sync()))
+    await serialize(eventActionBuckets.delete.map(e => () => e.sync()))
   }
 }
 
