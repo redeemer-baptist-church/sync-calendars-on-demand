@@ -1,3 +1,4 @@
+const camelCase = require('lodash/camelCase')
 const cheerio = require('cheerio')
 const dayjs = require('dayjs')
 const pretty = require('pretty')
@@ -75,12 +76,32 @@ class MailchimpNewsletterGenerator {
         .filter(calendar => !calendar.primary)
         .sort((a, b) => a.summary.localeCompare(b.summary)))
     console.info(`Google reports these calendars: ${calendars.map(c => c.summary)}`)
-    const html = await serialize(calendars.map(calendar => this.buildEventsHtmlForCalendar(calendar)))
+    const html = await serialize(calendars.map(calendar => () => this.buildEventsHtmlForCalendar(calendar)))
       .then(htmlArray => `<dl>${htmlArray.filter(Boolean).join('')}</dl>`)
     const masterScheduleUrl = 'https://docs.google.com/spreadsheets/d/1RMPEOOnIixOftIKt5VGA1LBQFoWh0-_ohnt34JTnpWw/edit#gid=0' // eslint-disable-line max-len
     const masterScheduleHtml = `<dt><b><a href="${masterScheduleUrl}">Master Schedule</a></b></dt>`
 
     return `${html}${masterScheduleHtml}`
+  }
+
+  async getScriptureReferencesFromCalendar() {
+    const scopes = [
+      'https://www.googleapis.com/auth/calendar.readonly', // read-only acccess to calendar entries
+    ]
+    const manager = await GSuiteManagerFactory.calendarManager(scopes, this.gsuiteServiceAccount)
+    const calendarId = 'redeemerbc.com_gmiihbof3pt28k6lngkoufabqk@group.calendar.google.com'
+    const calendar = await manager.getCalendar(calendarId)
+
+    return calendar.getEvents({
+      singleEvents: true,
+      timeMax: this.serviceDate.endOf('day').toISOString(),
+      timeMin: this.serviceDate.subtract(6, 'days').toISOString(),
+    }).then(events => events.reduce((table, e) => {
+      const htmlId = camelCase(e.label.replace(`${calendar.summary} - `, ''))
+      const passages = e.description.split('\n')
+      table[htmlId] = passages // eslint-disable-line no-param-reassign
+      return table
+    }, {}))
   }
 
   async getSermonPassage(reference) { // eslint-disable-line class-methods-use-this
@@ -104,7 +125,7 @@ class MailchimpNewsletterGenerator {
   }
 
   async buildSermonPassageHtml(references) {
-    return serialize(references.map(reference => this.getSermonPassageHtml(reference)))
+    return serialize(references.map(reference => () => this.getSermonPassageHtml(reference)))
       .then(html => html.join(''))
   }
 
@@ -153,15 +174,9 @@ class MailchimpNewsletterGenerator {
     $("[data-redeemer-bot='sermonDate']").text(this.serviceDate.format('dddd, MMMM D, YYYY'))
 
     // replace the sermon passages
-    const scriptureReading = [
-      'Luke 1:26-45',
-    ]
-    $("[data-redeemer-bot='scriptureReading']").html(await this.buildSermonPassageHtml(scriptureReading))
-
-    const sermonPassage = [
-      'Isaiah 9:1-7',
-    ]
-    $("[data-redeemer-bot='sermonPassage']").html(await this.buildSermonPassageHtml(sermonPassage))
+    const references = await this.getScriptureReferencesFromCalendar()
+    $("[data-redeemer-bot='scriptureReading']").html(await this.buildSermonPassageHtml(references.scriptureReading))
+    $("[data-redeemer-bot='sermonPassage']").html(await this.buildSermonPassageHtml(references.sermonPassage))
 
     // replace the Spotify playlist
     const spotifyPlaylistUrl = 'https://open.spotify.com/playlist/2HoaFy0dLN5hs0EbMcUdJU'
