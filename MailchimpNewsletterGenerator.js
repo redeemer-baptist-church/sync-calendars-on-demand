@@ -153,15 +153,15 @@ class MailchimpNewsletterGenerator {
     $("[data-redeemer-bot='sermonDate']").text(this.serviceDate.format('dddd, MMMM D, YYYY'))
 
     // replace the sermon passages
-    const otReferences = [
-      'Ezra 4',
+    const scriptureReading = [
+      'Luke 1:26-45',
     ]
-    $("[data-redeemer-bot='otPassage']").html(await this.buildSermonPassageHtml(otReferences))
+    $("[data-redeemer-bot='scriptureReading']").html(await this.buildSermonPassageHtml(scriptureReading))
 
-    const ntReferences = [
-      'Jude 17-25',
+    const sermonPassage = [
+      'Isaiah 9:1-7',
     ]
-    $("[data-redeemer-bot='ntPassage']").html(await this.buildSermonPassageHtml(ntReferences))
+    $("[data-redeemer-bot='sermonPassage']").html(await this.buildSermonPassageHtml(sermonPassage))
 
     // replace the Spotify playlist
     const spotifyPlaylistUrl = 'https://open.spotify.com/playlist/2HoaFy0dLN5hs0EbMcUdJU'
