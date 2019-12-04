@@ -130,11 +130,12 @@ class GoogleSheetsToGoogleCalendarSync {
       }
 
       serializeEvent(event) { // eslint-disable-line class-methods-use-this
-        return `${event.label} - `
+        return (`${event.label} - `
           + `${dayjs(event.start).toISOString()} - `
           + `${dayjs(event.end).toISOString()} - `
           + `${event.attendees.sort()} - `
-          + `${event.description || ''}`
+          + `${event.description || ''}`)
+          .replace('\n', ' ')
       }
 
       serializeCalendarEvent() {
@@ -170,6 +171,7 @@ class GoogleSheetsToGoogleCalendarSync {
 
       async sync() {
         // return Promise.resolve()
+
         if (this.shouldDeleteCalendarEvent) {
           return this.deleteCalendarEvent()
         }
