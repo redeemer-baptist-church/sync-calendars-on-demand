@@ -1,5 +1,3 @@
-require('dotenv').config() // load gcloud credentials in dev
-
 const dayjs = require('dayjs')
 
 const {

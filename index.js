@@ -3,7 +3,7 @@ const {GoogleSheetsToGoogleCalendarSync} = require('./GoogleSheetsToGoogleCalend
 module.exports = {
   run: (request, response) => new GoogleSheetsToGoogleCalendarSync().run()
     .then(() => {
-      response.send('done')
+      response.send('ran')
     })
     .catch((e) => {
       console.log(e)
