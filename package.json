@@ -2,7 +2,7 @@
   "name": "redeemer-mailchimp",
   "version": "1.0.0",
   "description": "Sync Mailchimp lists to Google Apps groups",
-  "main": "app.js",
+  "main": "index.js",
   "dependencies": {
     "@redeemerbc/gsuite": "git+https://github.com/redeemer-baptist-church/gsuite.git",
     "@redeemerbc/secret": "git+https://github.com/redeemer-baptist-church/npm-secret.git",

@@ -272,8 +272,4 @@ class GoogleSheetsToGoogleCalendarSync {
   }
 }
 
-new GoogleSheetsToGoogleCalendarSync().run()
-  .catch((e) => {
-    console.log(e)
-    throw e
-  })
+module.exports = {GoogleSheetsToGoogleCalendarSync}
