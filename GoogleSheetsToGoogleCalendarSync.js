@@ -33,10 +33,12 @@ class GoogleSheetsToGoogleCalendarSync {
     // TODO: GSuite "Calendar usage limits exceeded"
     const masterSchedule = await this.getSheetsMasterSchedule()
 
-    Object.keys(masterSchedule.scheduleGroups).forEach((calendarId) => {
-      const scheduleGroup = masterSchedule.scheduleGroups[calendarId]
-      this.syncScheduleGroupToGoogleCalendar(calendarId, scheduleGroup)
-    })
+
+    const scheduleGroups = Object.keys(masterSchedule.scheduleGroups)
+      .map(calendarId => masterSchedule.scheduleGroups[calendarId])
+
+    return serialize(scheduleGroups
+      .map(scheduleGroup => () => this.syncScheduleGroupToGoogleCalendar(scheduleGroup)))
   }
 
   async buildGSuitePeopleMapper() {
@@ -74,13 +76,14 @@ class GoogleSheetsToGoogleCalendarSync {
     return new MasterSchedule({data: allCells.data, sheet})
   }
 
-  async syncScheduleGroupToGoogleCalendar(calendarId, scheduleGroup) {
+  async syncScheduleGroupToGoogleCalendar(scheduleGroup) {
     // TODO: CalendarManager and friends should provide scope enums: READ_WRITE, READ_ONLY
     const scopes = [
       'https://www.googleapis.com/auth/calendar', // read/write acccess to calendar entries
     ]
     const manager = await GSuiteManagerFactory.calendarManager(scopes, this.gsuiteServiceAccount)
 
+    const calendarId = scheduleGroup[0].calendarId
     const events = scheduleGroup.reduce((eventList, schedule) => {
       eventList.push(schedule.events)
       return eventList
