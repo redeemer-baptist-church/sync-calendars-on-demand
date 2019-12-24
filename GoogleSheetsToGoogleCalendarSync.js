@@ -4,7 +4,6 @@ const {
   ManagerFactory: GSuiteManagerFactory,
 } = require('@redeemerbc/gsuite')
 const {serialize} = require('@redeemerbc/serialize')
-const {Secret} = require('@redeemerbc/secret')
 const {MasterSchedule} = require('./lib/redeemerbc/schedules')
 const {PeopleMapper} = require('./lib/redeemerbc')
 
@@ -25,12 +24,7 @@ function sleep(ms) {
 
 class GoogleSheetsToGoogleCalendarSync {
   async run() {
-    this.gsuiteServiceAccount = await new Secret('GsuiteServiceAccount').get()
-
-    // TODO: GSuite "Error: Rate Limit Exceeded"
-    // TODO: GSuite "Calendar usage limits exceeded"
     const masterSchedule = await this.getSheetsMasterSchedule()
-
 
     const scheduleGroups = Object.keys(masterSchedule.scheduleGroups)
       .map(calendarId => masterSchedule.scheduleGroups[calendarId])
@@ -48,7 +42,7 @@ class GoogleSheetsToGoogleCalendarSync {
     const scopes = [
       'https://www.googleapis.com/auth/contacts.readonly', // read-only acccess to contact lists
     ]
-    const manager = await GSuiteManagerFactory.peopleManager(scopes, this.gsuiteServiceAccount)
+    const manager = await GSuiteManagerFactory.peopleManager(scopes)
 
     return manager.getContacts({
       personFields: 'names,emailAddresses',
@@ -59,7 +53,7 @@ class GoogleSheetsToGoogleCalendarSync {
     const scopes = [
       'https://www.googleapis.com/auth/spreadsheets.readonly', // read-only access to spreadsheets
     ]
-    const manager = await GSuiteManagerFactory.sheetsManager(scopes, this.gsuiteServiceAccount)
+    const manager = await GSuiteManagerFactory.sheetsManager(scopes)
     const masterScheduleSheetId = '1RMPEOOnIixOftIKt5VGA1LBQFoWh0-_ohnt34JTnpWw'
     const masterScheduleSheet = await manager.getSpreadsheet(masterScheduleSheetId)
     // const sheet = masterScheduleSheet.getSheet(0) // master schedule
@@ -79,7 +73,7 @@ class GoogleSheetsToGoogleCalendarSync {
     const scopes = [
       'https://www.googleapis.com/auth/calendar', // read/write acccess to calendar entries
     ]
-    const manager = await GSuiteManagerFactory.calendarManager(scopes, this.gsuiteServiceAccount)
+    const manager = await GSuiteManagerFactory.calendarManager(scopes)
 
     const calendarId = scheduleGroup[0].calendarId
     const events = scheduleGroup.reduce((eventList, schedule) => {
