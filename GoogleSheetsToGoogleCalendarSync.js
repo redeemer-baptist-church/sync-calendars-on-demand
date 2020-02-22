@@ -38,7 +38,7 @@ class GoogleSheetsToGoogleCalendarSync {
     return new PeopleMapper(gsuiteContacts)
   }
 
-  async getGSuiteContacts() {
+  async getGSuiteContacts() { // eslint-disable-line class-methods-use-this
     const scopes = [
       'https://www.googleapis.com/auth/contacts.readonly', // read-only acccess to contact lists
     ]
@@ -74,20 +74,19 @@ class GoogleSheetsToGoogleCalendarSync {
       'https://www.googleapis.com/auth/calendar', // read/write acccess to calendar entries
     ]
     const manager = await GSuiteManagerFactory.calendarManager(scopes)
+    const {calendarId} = scheduleGroup[0]
+    const startDate = dayjs().startOf('day') // we don't want to modify events from the past
 
-    const calendarId = scheduleGroup[0].calendarId
     const events = scheduleGroup.reduce((eventList, schedule) => {
       eventList.push(schedule.events)
       return eventList
-    }, []).flat()
-    // TODO: timeMin should be max(firstEvent, today()) - that is, don't change events that already happened
-    // - need to also filter out old scheduleEvents so we don't re-create old events
-    const firstEvent = events[0]
+    }, []).flat().filter(event => event.date.startOf('day') > startDate)
     const lastEvent = events.slice(-1).pop()
+
     const calendar = await manager.getCalendar(calendarId)
     const existingCalendarEvents = await calendar.getEvents({
       singleEvents: true,
-      timeMin: firstEvent.date.startOf('day').toISOString(),
+      timeMin: startDate.toISOString(),
       timeMax: lastEvent.date.endOf('day').toISOString(),
     })
 
