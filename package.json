@@ -9,7 +9,7 @@
     "@redeemerbc/serialize": "git+https://github.com/redeemer-baptist-church/npm-serialize.git",
     "array.prototype.flat": "^1.2.1",
     "dayjs": "^1.8.15",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "ow": "^0.12.0"
   },
   "devDependencies": {
